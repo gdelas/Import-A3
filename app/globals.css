@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", "Courier New", monospace;
+  --font-serif: ui-serif, "Iowan Old Style", "Georgia", "Times New Roman", serif;
+
+  /* Base */
+  --color-paper: #F4F6F4;
+  --color-paper-alt: #E8EDE9;
+  --color-surface: #FFFFFF;
+  --color-ink: #15241C;
+  --color-ink-soft: #51635A;
+  --color-line: #D5DED8;
+
+  /* A3 green family */
+  --color-brand: #0B6E4F;
+  --color-brand-dark: #064A35;
+  --color-brand-light: #E3F1EA;
+  --color-brand-mid: #5FA98A;
+
+  /* Accents */
+  --color-rubber: #C2452C;
+  --color-rubber-soft: #FBE7E1;
+  --color-amber-stamp: #C8842E;
+  --color-amber-soft: #F8EDD9;
+  --color-ledger: var(--color-brand);
+  --color-ledger-soft: var(--color-brand-light);
+}
+
+body {
+  background-color: var(--color-paper);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+.font-serif-display {
+  font-family: var(--font-serif);
+  letter-spacing: -0.01em;
+}
+
+.font-mono-tab {
+  font-family: var(--font-mono);
+}
+
+.bg-grid {
+  background-image:
+    linear-gradient(to right, var(--color-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--color-line) 1px, transparent 1px);
+  background-size: 100% 2.25rem;
+}
+
+.bg-brand-grid {
+  background-image:
+    linear-gradient(to right, rgba(255,255,255,0.06) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255,255,255,0.06) 1px, transparent 1px);
+  background-size: 100% 2.25rem;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.brand-gradient {
+  background: linear-gradient(135deg, var(--color-brand) 0%, var(--color-brand-dark) 100%);
+}
