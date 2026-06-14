@@ -3,52 +3,43 @@
 import { useState, useRef, useEffect } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { leerClienteActivo } from "@/lib/clienteStore";
-import { FacturaExtraida, FicheroCliente, LineaAsiento } from "@/lib/types";
-import { generarAsientosFactura } from "@/lib/asientos";
-import { exportarAsientos, descargarBlob } from "@/lib/excel";
+import { guardarFacturas, leerSesion } from "@/lib/sessionStore";
+import { FacturaExtraida, FicheroCliente } from "@/lib/types";
 import {
-  Upload,
-  FileText,
-  Loader2,
-  AlertTriangle,
-  CheckCircle2,
-  Download,
-  UserCircle2,
+  Upload, FileText, Loader2, AlertTriangle,
+  CheckCircle2, Trash2, UserCircle2,
 } from "lucide-react";
 
 interface ProcesoFactura {
   archivo: string;
   estado: "pendiente" | "procesando" | "ok" | "error";
   factura?: FacturaExtraida;
-  filas?: LineaAsiento[];
   error?: string;
 }
 
 export default function FacturasPage() {
   const [cliente, setCliente] = useState<FicheroCliente | null>(null);
   const [items, setItems] = useState<ProcesoFactura[]>([]);
-  const [numInicial, setNumInicial] = useState(1);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setCliente(leerClienteActivo());
+    // Restaurar facturas ya procesadas en esta sesión
+    const sesion = leerSesion();
+    if (sesion.facturas.length > 0) {
+      setItems(sesion.facturas.map((f) => ({
+        archivo: f.archivo,
+        estado: "ok" as const,
+        factura: f,
+      })));
+    }
   }, []);
 
-  function recalcularNumerosCon(
-    lista: ProcesoFactura[],
-    inicio: number,
-    cli: FicheroCliente | null
-  ): ProcesoFactura[] {
-    let siguiente = inicio;
-    return lista.map((it) => {
-      if (!it.factura || it.estado !== "ok") return it;
-      const data = cli ?? leerClienteActivo();
-      if (!data) return it;
-      const filas = generarAsientosFactura(it.factura, data.cliente, data.planCuentas, siguiente);
-      siguiente += 1;
-      return { ...it, filas };
-    });
-  }
+  // Cada vez que cambian los items, sincronizar con la sesión
+  useEffect(() => {
+    const facturas = items.filter((it) => it.estado === "ok" && it.factura).map((it) => it.factura!);
+    guardarFacturas(facturas);
+  }, [items]);
 
   async function handleFiles(files: FileList) {
     const nuevos: ProcesoFactura[] = Array.from(files).map((f) => ({
@@ -59,7 +50,7 @@ export default function FacturasPage() {
 
     for (const file of Array.from(files)) {
       setItems((prev) =>
-        prev.map((it) => (it.archivo === file.name ? { ...it, estado: "procesando" } : it))
+        prev.map((it) => it.archivo === file.name ? { ...it, estado: "procesando" } : it)
       );
 
       try {
@@ -70,10 +61,9 @@ export default function FacturasPage() {
 
         if (!res.ok || data.error) {
           setItems((prev) =>
-            prev.map((it) =>
-              it.archivo === file.name
-                ? { ...it, estado: "error", error: data.error || "Error al procesar" }
-                : it
+            prev.map((it) => it.archivo === file.name
+              ? { ...it, estado: "error", error: data.error || "Error al procesar" }
+              : it
             )
           );
           continue;
@@ -98,22 +88,25 @@ export default function FacturasPage() {
           alertas: Array.isArray(data.alertas) ? data.alertas : [],
         };
 
-        setItems((prev) => {
-          const actualizado = prev.map((it) =>
-            it.archivo === file.name ? { ...it, estado: "ok" as const, factura } : it
-          );
-          return recalcularNumerosCon(actualizado, numInicial, cliente);
-        });
+        setItems((prev) =>
+          prev.map((it) => it.archivo === file.name
+            ? { ...it, estado: "ok" as const, factura }
+            : it
+          )
+        );
       } catch (err) {
         setItems((prev) =>
-          prev.map((it) =>
-            it.archivo === file.name
-              ? { ...it, estado: "error", error: err instanceof Error ? err.message : "Error" }
-              : it
+          prev.map((it) => it.archivo === file.name
+            ? { ...it, estado: "error", error: err instanceof Error ? err.message : "Error" }
+            : it
           )
         );
       }
     }
+  }
+
+  function eliminar(archivo: string) {
+    setItems((prev) => prev.filter((it) => it.archivo !== archivo));
   }
 
   function onDrop(e: React.DragEvent<HTMLDivElement>) {
@@ -121,24 +114,15 @@ export default function FacturasPage() {
     if (e.dataTransfer.files?.length) handleFiles(e.dataTransfer.files);
   }
 
-  function exportar() {
-    const todasFilas = items.flatMap((it) => it.filas ?? []);
-    if (todasFilas.length === 0) return;
-    const plantilla = cliente?.plantillaA3 ?? [];
-    const blob = exportarAsientos(todasFilas, plantilla);
-    descargarBlob(blob, "asientos_facturas.xlsx");
-  }
-
-  const totalFilas = items.flatMap((it) => it.filas ?? []).length;
-  const totalAlertas = items.flatMap((it) => it.filas ?? []).filter((l) => l.alerta).length;
-  const totalAsientos = new Set(items.flatMap((it) => it.filas ?? []).map((l) => l.numAsiento)).size;
+  const totalOk = items.filter((it) => it.estado === "ok").length;
+  const totalError = items.filter((it) => it.estado === "error").length;
 
   return (
     <div className="min-h-screen bg-[var(--color-paper)]">
       <PageHeader
         index="01"
-        title="Lector de facturas"
-        description="Sube una o varias facturas en PDF. Cada una se lee automáticamente y se generan los asientos según el maestro del cliente activo, en formato de 9 columnas para A3."
+        title="Facturas PDF"
+        description="Sube las facturas del período. Se leen y quedan guardadas en la sesión. Los asientos se generan desde el panel principal cuando todo esté listo."
         client={cliente?.cliente.nombre || undefined}
       />
 
@@ -148,35 +132,12 @@ export default function FacturasPage() {
             <UserCircle2 size={18} className="text-[var(--color-amber-stamp)] mt-0.5 shrink-0" />
             <div className="text-sm text-[var(--color-ink-soft)]">
               <p className="font-medium text-[var(--color-ink)] mb-1">Sin cliente cargado</p>
-              Carga primero el fichero del cliente en el{" "}
-              <a href="/maestro" className="text-[var(--color-brand)] underline">
-                módulo 02
-              </a>{" "}
-              para que los asientos usen las subcuentas, retenciones, prorrata
-              y demás particularidades correctas.
+              Las facturas se leerán igualmente pero los asientos usarán cuentas genéricas. Carga el{" "}
+              <a href="/maestro" className="text-[var(--color-brand)] underline">módulo 02</a>{" "}
+              para usar las subcuentas y particularidades del cliente.
             </div>
           </div>
         )}
-
-        <div className="flex items-center gap-3 border border-[var(--color-line)] bg-[var(--color-surface)] rounded-md px-4 py-3">
-          <label className="text-sm text-[var(--color-ink-soft)] font-mono-tab text-xs tracking-[0.15em]">
-            EMPEZAR NUMERACIÓN EN
-          </label>
-          <input
-            type="number"
-            min={1}
-            value={numInicial}
-            onChange={(e) => {
-              const v = Math.max(1, Number(e.target.value) || 1);
-              setNumInicial(v);
-              setItems((prev) => recalcularNumerosCon(prev, v, cliente));
-            }}
-            className="w-24 border border-[var(--color-line)] rounded-sm px-2 py-1 text-sm font-mono-tab text-[var(--color-ink)] bg-[var(--color-paper)]"
-          />
-          <span className="text-xs text-[var(--color-ink-soft)]">
-            Siguiente número de asiento libre en A3
-          </span>
-        </div>
 
         <div
           onDrop={onDrop}
@@ -189,47 +150,43 @@ export default function FacturasPage() {
             Arrastra una o varias facturas en PDF
           </p>
           <p className="text-sm text-[var(--color-ink-soft)] mt-1">
-            o haz clic para seleccionar los archivos
+            o haz clic para seleccionar
           </p>
-          <input
-            ref={inputRef}
-            type="file"
-            accept="application/pdf"
-            multiple
-            className="hidden"
-            onChange={(e) => {
-              if (e.target.files?.length) handleFiles(e.target.files);
-            }}
+          <input ref={inputRef} type="file" accept="application/pdf" multiple className="hidden"
+            onChange={(e) => { if (e.target.files?.length) handleFiles(e.target.files); }}
           />
         </div>
 
         {items.length > 0 && (
-          <div className="space-y-4">
-            {items.map((it) => (
-              <FacturaCard key={it.archivo} item={it} />
-            ))}
+          <div className="space-y-3">
+            {/* Resumen */}
+            <div className="flex items-center gap-4 text-sm">
+              {totalOk > 0 && (
+                <span className="flex items-center gap-1.5 text-[var(--color-brand)]">
+                  <CheckCircle2 size={14} />
+                  {totalOk} {totalOk === 1 ? "factura leída" : "facturas leídas"}
+                </span>
+              )}
+              {totalError > 0 && (
+                <span className="flex items-center gap-1.5 text-[var(--color-rubber)]">
+                  <AlertTriangle size={14} />
+                  {totalError} con error
+                </span>
+              )}
+              {totalOk > 0 && (
+                <span className="text-[var(--color-ink-soft)] ml-auto">
+                  Vuelve al{" "}
+                  <a href="/" className="text-[var(--color-brand)] underline font-medium">
+                    panel principal
+                  </a>{" "}
+                  para generar los asientos.
+                </span>
+              )}
+            </div>
 
-            {totalFilas > 0 && (
-              <div className="border border-[var(--color-line)] bg-[var(--color-surface)] rounded-md p-5 flex items-center justify-between gap-4 flex-wrap">
-                <div className="text-sm text-[var(--color-ink-soft)]">
-                  <span className="font-medium text-[var(--color-ink)]">{totalAsientos}</span> asientos ·{" "}
-                  <span className="font-medium text-[var(--color-ink)]">{totalFilas}</span> filas
-                  {totalAlertas > 0 && (
-                    <span className="text-[var(--color-amber-stamp)]">
-                      {" "}
-                      · {totalAlertas} con aviso para revisar
-                    </span>
-                  )}
-                </div>
-                <button
-                  onClick={exportar}
-                  className="flex items-center gap-2 bg-[var(--color-brand)] text-white px-4 py-2 rounded-md text-sm font-medium hover:bg-[var(--color-brand-dark)] transition-colors"
-                >
-                  <Download size={15} />
-                  Exportar XLS para A3
-                </button>
-              </div>
-            )}
+            {items.map((it) => (
+              <FacturaCard key={it.archivo} item={it} onEliminar={() => eliminar(it.archivo)} />
+            ))}
           </div>
         )}
       </main>
@@ -237,18 +194,20 @@ export default function FacturasPage() {
   );
 }
 
-function FacturaCard({ item }: { item: ProcesoFactura }) {
+function FacturaCard({ item, onEliminar }: { item: ProcesoFactura; onEliminar: () => void }) {
   return (
     <div className="border border-[var(--color-line)] rounded-md overflow-hidden bg-[var(--color-surface)]">
       <div className="bg-[var(--color-brand-light)] px-4 py-2 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm font-mono-tab text-[var(--color-brand-dark)]">
           <FileText size={14} />
           {item.archivo}
-          {item.filas?.[0] && (
-            <span className="text-[var(--color-ink-soft)]">· Asiento {item.filas[0].numAsiento}</span>
-          )}
         </div>
-        <Estado estado={item.estado} />
+        <div className="flex items-center gap-3">
+          <EstadoBadge estado={item.estado} />
+          <button onClick={onEliminar} className="text-[var(--color-ink-soft)] hover:text-[var(--color-rubber)] transition-colors">
+            <Trash2 size={14} />
+          </button>
+        </div>
       </div>
 
       {item.estado === "error" && (
@@ -259,84 +218,22 @@ function FacturaCard({ item }: { item: ProcesoFactura }) {
       )}
 
       {item.estado === "ok" && item.factura && (
-        <div className="p-4 space-y-4">
-          <div className="grid sm:grid-cols-2 gap-x-6 gap-y-1 text-sm">
+        <div className="p-4">
+          <div className="grid sm:grid-cols-3 gap-x-6 gap-y-1 text-sm">
             <Campo label="Tipo" value={item.factura.tipo === "venta" ? "Venta" : item.factura.tipo === "compra" ? "Compra" : "Sin determinar"} />
-            <Campo label="Nº factura" value={item.factura.numeroFactura || "—"} />
             <Campo label="Fecha" value={item.factura.fecha || "—"} />
+            <Campo label="Nº factura" value={item.factura.numeroFactura || "—"} />
             <Campo label="Emisor" value={item.factura.emisor || "—"} />
-            <Campo label="Receptor" value={item.factura.receptor || "—"} />
-            <Campo label="Base imponible" value={formatEuro(item.factura.baseImponible)} />
-            <Campo label={`IVA (${item.factura.tipoIva}%)`} value={formatEuro(item.factura.cuotaIva)} />
+            <Campo label="Base" value={fmt(item.factura.baseImponible)} />
+            <Campo label={`IVA ${item.factura.tipoIva}%`} value={fmt(item.factura.cuotaIva)} />
             {item.factura.retencionImporte > 0 && (
-              <Campo label={`Retención (${item.factura.retencionPct}%)`} value={formatEuro(item.factura.retencionImporte)} />
+              <Campo label={`Retención ${item.factura.retencionPct}%`} value={fmt(item.factura.retencionImporte)} />
             )}
-            {item.factura.suplidos > 0 && (
-              <Campo label="Suplidos" value={formatEuro(item.factura.suplidos)} />
-            )}
-            <Campo label="Total" value={formatEuro(item.factura.total)} />
+            <Campo label="Total" value={fmt(item.factura.total)} />
           </div>
-
           {item.factura.alertas.length > 0 && (
-            <div className="border border-[var(--color-amber-stamp)] bg-[var(--color-amber-soft)] rounded-md p-3 text-sm text-[var(--color-ink-soft)]">
-              <div className="flex items-center gap-2 mb-1 text-[var(--color-amber-stamp)] font-mono-tab text-xs tracking-[0.15em]">
-                <AlertTriangle size={13} />
-                AVISOS DE LECTURA
-              </div>
-              <ul className="list-disc pl-5 space-y-0.5">
-                {item.factura.alertas.map((a, i) => (
-                  <li key={i}>{a}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {item.filas && item.filas.length > 0 && (
-            <div>
-              <p className="font-mono-tab text-xs tracking-[0.15em] text-[var(--color-ink-soft)] mb-2">
-                ASIENTO GENERADO (formato A3)
-              </p>
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-[var(--color-brand)] text-white text-left">
-                    <th className="px-2 py-1.5 font-mono-tab text-xs">Nº</th>
-                    <th className="px-2 py-1.5 font-mono-tab text-xs">Cód.</th>
-                    <th className="px-2 py-1.5 font-mono-tab text-xs">Concepto</th>
-                    <th className="px-2 py-1.5 font-mono-tab text-xs">Cta. debe</th>
-                    <th className="px-2 py-1.5 font-mono-tab text-xs text-right">Imp. debe</th>
-                    <th className="px-2 py-1.5 font-mono-tab text-xs text-right">Imp. haber</th>
-                    <th className="px-2 py-1.5 font-mono-tab text-xs">Cta. haber</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {item.filas.map((l, i) => (
-                    <tr
-                      key={i}
-                      className={`border-b border-[var(--color-line)] last:border-0 ${
-                        l.alerta ? "bg-[var(--color-amber-soft)]" : i % 2 === 1 ? "bg-[var(--color-brand-light)]" : ""
-                      }`}
-                    >
-                      <td className="px-2 py-1.5 font-mono-tab text-[var(--color-ink-soft)]">{l.numAsiento}</td>
-                      <td className="px-2 py-1.5 font-mono-tab text-[var(--color-ink-soft)]">{l.codigoOperacion}</td>
-                      <td className="px-2 py-1.5">{l.concepto}</td>
-                      <td className="px-2 py-1.5 font-mono-tab text-[var(--color-brand-dark)] font-medium">{l.cuentaDebe || "—"}</td>
-                      <td className="px-2 py-1.5 text-right tabular">{l.importeDebe ? formatEuro(l.importeDebe) : ""}</td>
-                      <td className="px-2 py-1.5 text-right tabular">{l.importeHaber ? formatEuro(l.importeHaber) : ""}</td>
-                      <td className="px-2 py-1.5 font-mono-tab text-[var(--color-brand-dark)] font-medium">{l.cuentaHaber || "—"}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {item.filas.some((l) => l.alerta) && (
-                <div className="mt-2 space-y-1">
-                  {item.filas.filter((l) => l.alerta).map((l, i) => (
-                    <p key={i} className="text-xs text-[var(--color-amber-stamp)] flex items-start gap-1.5">
-                      <AlertTriangle size={12} className="mt-0.5 shrink-0" />
-                      {l.alerta}
-                    </p>
-                  ))}
-                </div>
-              )}
+            <div className="mt-3 border border-[var(--color-amber-stamp)] bg-[var(--color-amber-soft)] rounded-md p-3 text-xs text-[var(--color-amber-stamp)]">
+              {item.factura.alertas.join(" · ")}
             </div>
           )}
         </div>
@@ -345,43 +242,34 @@ function FacturaCard({ item }: { item: ProcesoFactura }) {
   );
 }
 
-function Estado({ estado }: { estado: ProcesoFactura["estado"] }) {
-  if (estado === "pendiente") {
-    return <span className="text-xs font-mono-tab text-[var(--color-ink-soft)]">En espera</span>;
-  }
-  if (estado === "procesando") {
-    return (
-      <span className="text-xs font-mono-tab text-[var(--color-brand)] flex items-center gap-1.5">
-        <Loader2 size={13} className="animate-spin" />
-        Leyendo
-      </span>
-    );
-  }
-  if (estado === "error") {
-    return (
-      <span className="text-xs font-mono-tab text-[var(--color-rubber)] flex items-center gap-1.5">
-        <AlertTriangle size={13} />
-        Error
-      </span>
-    );
-  }
-  return (
-    <span className="text-xs font-mono-tab text-[var(--color-brand)] flex items-center gap-1.5">
-      <CheckCircle2 size={13} />
-      Procesada
+function EstadoBadge({ estado }: { estado: ProcesoFactura["estado"] }) {
+  if (estado === "procesando") return (
+    <span className="text-xs font-mono-tab text-[var(--color-brand)] flex items-center gap-1">
+      <Loader2 size={12} className="animate-spin" />Leyendo
     </span>
   );
+  if (estado === "error") return (
+    <span className="text-xs font-mono-tab text-[var(--color-rubber)] flex items-center gap-1">
+      <AlertTriangle size={12} />Error
+    </span>
+  );
+  if (estado === "ok") return (
+    <span className="text-xs font-mono-tab text-[var(--color-brand)] flex items-center gap-1">
+      <CheckCircle2 size={12} />Leída
+    </span>
+  );
+  return <span className="text-xs font-mono-tab text-[var(--color-ink-soft)]">En espera</span>;
 }
 
 function Campo({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex justify-between gap-3 py-0.5 border-b border-[var(--color-line)] sm:border-0">
+    <div className="flex justify-between gap-2 py-0.5 border-b border-[var(--color-line)] sm:border-0">
       <span className="text-[var(--color-ink-soft)]">{label}</span>
-      <span className="font-medium text-[var(--color-ink)] tabular">{value}</span>
+      <span className="font-medium tabular">{value}</span>
     </div>
   );
 }
 
-function formatEuro(n: number): string {
+function fmt(n: number): string {
   return n.toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €";
 }

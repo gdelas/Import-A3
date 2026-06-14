@@ -1,31 +1,18 @@
 "use client";
 
 import { FicheroCliente } from "./types";
+import { guardarCliente, leerSesion } from "./sessionStore";
 
-const KEY = "efa_cliente_activo";
-
+// Mantiene compatibilidad con módulos que llaman a estas funciones
 export function guardarClienteActivo(data: FicheroCliente) {
-  try {
-    sessionStorage.setItem(KEY, JSON.stringify(data));
-  } catch {
-    // almacenamiento no disponible, se ignora
-  }
+  guardarCliente(data);
 }
 
 export function leerClienteActivo(): FicheroCliente | null {
-  try {
-    const raw = sessionStorage.getItem(KEY);
-    if (!raw) return null;
-    return JSON.parse(raw) as FicheroCliente;
-  } catch {
-    return null;
-  }
+  return leerSesion().cliente ?? null;
 }
 
 export function limpiarClienteActivo() {
-  try {
-    sessionStorage.removeItem(KEY);
-  } catch {
-    // no-op
-  }
+  // La limpieza completa se hace desde limpiarSesion()
+  sessionStorage.removeItem("efa_cliente_activo");
 }

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
+import { NuevaSesion } from "./NuevaSesion";
 
 export function PageHeader({
   index,
@@ -16,13 +17,16 @@ export function PageHeader({
     <header className="brand-gradient text-white">
       <div className="bg-brand-grid">
         <div className="max-w-5xl mx-auto px-6 pt-8 pb-7">
-          <Link
-            href="/"
-            className="inline-flex items-center gap-2 text-sm text-white/70 hover:text-white transition-colors mb-6"
-          >
-            <ArrowLeft size={15} />
-            Panel principal
-          </Link>
+          <div className="flex items-center justify-between mb-6">
+            <Link
+              href="/"
+              className="inline-flex items-center gap-2 text-sm text-white/70 hover:text-white transition-colors"
+            >
+              <ArrowLeft size={15} />
+              Panel principal
+            </Link>
+            <NuevaSesion />
+          </div>
 
           <div className="flex items-baseline gap-3 mb-2 flex-wrap">
             <span className="font-mono-tab text-xs tracking-[0.2em] bg-white/10 border border-white/20 px-2 py-0.5 rounded-sm">
