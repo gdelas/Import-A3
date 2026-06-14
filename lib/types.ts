@@ -1,20 +1,22 @@
 export type RetencionTipo = "ninguna" | "7" | "15" | "19" | "35";
+export type RegimenIva = "general" | "simplificado" | "exento" | "recc";
 
 export interface ClienteMaestro {
   nombre: string;
   cif: string;
   actividad: string;
   retencion: RetencionTipo;
+  // Prorrata
   prorrata: boolean;
-  porcentajeProrrata: number;
+  porcentajeProrrata: number; // 0-100, solo relevante si prorrata=true
+  // Otras particularidades
   recargoEquivalencia: boolean;
   criterioCaja: boolean;
-  regimenIva: "general" | "simplificado" | "exento" | "recc";
+  regimenIva: RegimenIva;
   notas: string;
 }
 
-/** Una fila del plan de cuentas del cliente: concepto del balance/PyG y su
- * cuenta/subcuenta asignada en A3. Ampliable libremente. */
+/** Una fila del plan de cuentas del cliente */
 export interface CuentaPlan {
   concepto: string;
   cuenta: string;
@@ -79,24 +81,26 @@ export const PLACEHOLDER_CLIENTE: ClienteMaestro = {
   notas: "",
 };
 
-/** Conceptos habituales que se ofrecen como punto de partida en el plan de
- * cuentas del cliente — pensados para cubrir clientes, proveedores, bancos
- * y las cuentas de ingreso/gasto más usadas. Ampliable por el usuario. */
 export const PLAN_CUENTAS_BASE: CuentaPlan[] = [
-  { concepto: "Cliente principal", cuenta: "" },
-  { concepto: "Proveedor principal", cuenta: "" },
-  { concepto: "Banco principal", cuenta: "572" },
-  { concepto: "Caja", cuenta: "570" },
-  { concepto: "Ingreso por servicios", cuenta: "705" },
-  { concepto: "Ingreso por ventas de mercaderías", cuenta: "700" },
-  { concepto: "Gasto general / otros servicios", cuenta: "629" },
-  { concepto: "Arrendamientos", cuenta: "621" },
-  { concepto: "Suministros", cuenta: "628" },
-  { concepto: "IVA soportado", cuenta: "472" },
-  { concepto: "IVA repercutido", cuenta: "477" },
-  { concepto: "HP retenciones soportadas", cuenta: "473" },
-  { concepto: "HP retenciones practicadas", cuenta: "4751" },
-  { concepto: "Suplidos", cuenta: "554" },
+  { concepto: "Cliente principal", cuenta: "", notas: "Subcuenta 430xxx asignada en A3" },
+  { concepto: "Proveedor principal", cuenta: "", notas: "Subcuenta 400xxx asignada en A3" },
+  { concepto: "Banco principal", cuenta: "572", notas: "Cuenta bancaria principal" },
+  { concepto: "Caja", cuenta: "570", notas: "" },
+  { concepto: "Ingreso por servicios", cuenta: "705", notas: "Cuenta habitual de ventas/servicios" },
+  { concepto: "Ingreso por ventas de mercaderías", cuenta: "700", notas: "" },
+  { concepto: "Gasto general / otros servicios", cuenta: "629", notas: "Cuenta habitual de gastos" },
+  { concepto: "Arrendamientos", cuenta: "621", notas: "Alquiler de local, nave, etc." },
+  { concepto: "Suministros", cuenta: "628", notas: "Luz, agua, gas, teléfono, internet" },
+  { concepto: "Servicios profesionales", cuenta: "623", notas: "Abogados, asesores, etc." },
+  { concepto: "Seguros", cuenta: "625", notas: "" },
+  { concepto: "Servicios bancarios", cuenta: "626", notas: "Comisiones y mantenimiento" },
+  { concepto: "Publicidad", cuenta: "627", notas: "" },
+  { concepto: "Gastos de personal", cuenta: "640", notas: "Nóminas" },
+  { concepto: "IVA soportado", cuenta: "472", notas: "" },
+  { concepto: "IVA repercutido", cuenta: "477", notas: "" },
+  { concepto: "HP retenciones soportadas", cuenta: "473", notas: "Retenciones que nos practican a nosotros" },
+  { concepto: "HP retenciones practicadas", cuenta: "4751", notas: "Retenciones que practicamos a terceros" },
+  { concepto: "Suplidos", cuenta: "554", notas: "" },
 ];
 
 export const PLANTILLA_A3_BASE: ColumnaPlantillaA3[] = [

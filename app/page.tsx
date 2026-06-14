@@ -100,7 +100,7 @@ export default function Home() {
   const modules = [
     { index: "01", href: "/facturas", icon: FileText, title: "Facturas PDF",
       description: "Sube las facturas del período. Se leen y quedan en sesión.", badge: sesion.numFacturas },
-    { index: "02", href: "/maestro", icon: Users, title: "Fichero del cliente",
+    { index: "02", href: "/maestro", oldIndex: "02", icon: Users, title: "Fichero del cliente",
       description: "Datos fiscales, plan de cuentas y plantilla A3.", badge: sesion.tieneCliente ? 1 : 0 },
     { index: "03", href: "/bancos", icon: Landmark, title: "Extracto bancario",
       description: "Sube el extracto del banco. Los movimientos quedan en sesión.", badge: sesion.numMovimientos },
@@ -145,20 +145,6 @@ export default function Home() {
         <div className="border border-[var(--color-line)] bg-[var(--color-surface)] rounded-md shadow-sm overflow-hidden">
           <div className="bg-[var(--color-brand)] text-white px-5 py-3 flex items-center justify-between">
             <span className="font-mono-tab text-xs tracking-[0.2em]">SESIÓN ACTUAL</span>
-            {(sesion.tieneCliente || sesion.numFacturas > 0 || sesion.numMovimientos > 0) && (
-              confirmandoLimpiar ? (
-                <div className="flex items-center gap-3 text-xs">
-                  <span className="text-white/80">¿Borrar todo?</span>
-                  <button onClick={nuevaSesion} className="bg-white/20 hover:bg-white/30 px-2 py-1 rounded-sm transition-colors">Confirmar</button>
-                  <button onClick={() => setConfirmandoLimpiar(false)} className="text-white/60 hover:text-white transition-colors">Cancelar</button>
-                </div>
-              ) : (
-                <button onClick={() => setConfirmandoLimpiar(true)}
-                  className="flex items-center gap-1.5 text-xs text-white/70 hover:text-white transition-colors">
-                  <RefreshCw size={12} />Nueva sesión
-                </button>
-              )
-            )}
           </div>
 
           <div className="p-5">
@@ -184,6 +170,35 @@ export default function Home() {
                 href="/bancos"
                 opcional={true}
               />
+            </div>
+
+            {/* Botón nueva sesión — siempre visible */}
+            <div className="flex items-center justify-between mb-5 pb-4 border-b border-[var(--color-line)]">
+              <div className="text-sm text-[var(--color-ink-soft)]">
+                {sesion.tieneCliente || sesion.numFacturas > 0 || sesion.numMovimientos > 0
+                  ? <span>Sesión activa — <strong className="text-[var(--color-ink)]">{sesion.nombreCliente || "sin cliente"}</strong></span>
+                  : <span>Sin sesión activa. Empieza cargando el cliente en el módulo 02.</span>
+                }
+              </div>
+              {confirmandoLimpiar ? (
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-[var(--color-rubber)]">¿Borrar todo y empezar con otro cliente?</span>
+                  <button onClick={nuevaSesion}
+                    className="bg-[var(--color-rubber)] text-white px-3 py-1.5 rounded-md text-sm font-medium hover:opacity-90 transition-opacity">
+                    Sí, borrar todo
+                  </button>
+                  <button onClick={() => setConfirmandoLimpiar(false)}
+                    className="border border-[var(--color-line)] px-3 py-1.5 rounded-md text-sm text-[var(--color-ink-soft)] hover:border-[var(--color-ink)] transition-colors">
+                    Cancelar
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => setConfirmandoLimpiar(true)}
+                  className="flex items-center gap-2 border border-[var(--color-rubber)] text-[var(--color-rubber)] px-4 py-2 rounded-md text-sm font-medium hover:bg-[var(--color-rubber-soft)] transition-colors">
+                  <RefreshCw size={14} />
+                  Nuevo cliente
+                </button>
+              )}
             </div>
 
             {/* Warnings */}
@@ -212,6 +227,7 @@ export default function Home() {
                   value={numInicial}
                   onChange={(e) => setNumInicial(Math.max(1, Number(e.target.value) || 1))}
                   className="w-20 text-sm font-mono-tab text-[var(--color-ink)] bg-transparent outline-none border-l border-[var(--color-line)] pl-3"
+                  onFocus={(e) => e.target.select()}
                 />
               </div>
 
