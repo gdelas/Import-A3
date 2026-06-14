@@ -120,7 +120,7 @@ export default function ConsultasPage() {
             <div className="text-sm text-[var(--color-ink-soft)]">
               Carga el{" "}
               <a href="/maestro" className="text-[var(--color-brand)] underline">
-                módulo 02
+                módulo 01
               </a>{" "}
               para hacer consultas adaptadas a las particularidades de un
               cliente concreto. Mientras tanto, las respuestas serán generales.

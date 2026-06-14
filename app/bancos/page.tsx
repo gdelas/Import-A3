@@ -65,7 +65,7 @@ export default function BancosPage() {
             <div className="text-sm text-[var(--color-ink-soft)]">
               <p className="font-medium text-[var(--color-ink)] mb-1">Sin cliente cargado</p>
               Sin el{" "}
-              <a href="/maestro" className="text-[var(--color-brand)] underline">módulo 02</a>{" "}
+              <a href="/maestro" className="text-[var(--color-brand)] underline">módulo 01</a>{" "}
               la clasificación de contrapartidas usará solo cuentas genéricas del PGC.
             </div>
           </div>

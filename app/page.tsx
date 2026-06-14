@@ -98,10 +98,10 @@ export default function Home() {
   const puedeGenerar = sesion.numFacturas > 0 || sesion.numMovimientos > 0;
 
   const modules = [
-    { index: "01", href: "/facturas", icon: FileText, title: "Facturas PDF",
+    { index: "01", href: "/maestro", icon: Users, title: "Fichero del cliente",
+      description: "Base de todo el proceso. Datos fiscales, plan de cuentas y plantilla A3.", badge: sesion.tieneCliente ? 1 : 0 },
+    { index: "02", href: "/facturas", icon: FileText, title: "Facturas PDF",
       description: "Sube las facturas del período. Se leen y quedan en sesión.", badge: sesion.numFacturas },
-    { index: "02", href: "/maestro", oldIndex: "02", icon: Users, title: "Fichero del cliente",
-      description: "Datos fiscales, plan de cuentas y plantilla A3.", badge: sesion.tieneCliente ? 1 : 0 },
     { index: "03", href: "/bancos", icon: Landmark, title: "Extracto bancario",
       description: "Sube el extracto del banco. Los movimientos quedan en sesión.", badge: sesion.numMovimientos },
     { index: "04", href: "/consultas", icon: MessageCircleQuestion, title: "Consultas contables",
@@ -177,7 +177,7 @@ export default function Home() {
               <div className="text-sm text-[var(--color-ink-soft)]">
                 {sesion.tieneCliente || sesion.numFacturas > 0 || sesion.numMovimientos > 0
                   ? <span>Sesión activa — <strong className="text-[var(--color-ink)]">{sesion.nombreCliente || "sin cliente"}</strong></span>
-                  : <span>Sin sesión activa. Empieza cargando el cliente en el módulo 02.</span>
+                  : <span>Sin sesión activa. Empieza cargando el cliente en el módulo 01.</span>
                 }
               </div>
               {confirmandoLimpiar ? (
@@ -205,7 +205,7 @@ export default function Home() {
             {!sesion.tieneCliente && (
               <div className="flex items-start gap-2 text-sm text-[var(--color-amber-stamp)] bg-[var(--color-amber-soft)] border border-[var(--color-amber-stamp)] rounded-md p-3 mb-4">
                 <AlertTriangle size={15} className="mt-0.5 shrink-0" />
-                Sin cliente cargado los asientos usarán cuentas genéricas del PGC. Carga el módulo 02 primero.
+                Sin cliente cargado los asientos usarán cuentas genéricas del PGC. Carga el módulo 01 primero.
               </div>
             )}
             {!puedeGenerar && (
@@ -289,7 +289,7 @@ export default function Home() {
         </div>
 
         <div className="text-center font-mono-tab text-xs text-[var(--color-ink-soft)]">
-          by gdlmp · v0.5
+          by gdlmp · v0.6
         </div>
       </main>
     </div>

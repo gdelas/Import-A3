@@ -133,7 +133,7 @@ export default function FacturasPage() {
             <div className="text-sm text-[var(--color-ink-soft)]">
               <p className="font-medium text-[var(--color-ink)] mb-1">Sin cliente cargado</p>
               Las facturas se leerán igualmente pero los asientos usarán cuentas genéricas. Carga el{" "}
-              <a href="/maestro" className="text-[var(--color-brand)] underline">módulo 02</a>{" "}
+              <a href="/maestro" className="text-[var(--color-brand)] underline">módulo 01</a>{" "}
               para usar las subcuentas y particularidades del cliente.
             </div>
           </div>
