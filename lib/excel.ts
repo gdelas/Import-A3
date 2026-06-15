@@ -222,10 +222,15 @@ export function leerFicheroCliente(buffer: ArrayBuffer): {
       sheet, { header: 1, defval: "" }
     );
 
-    // Buscar la fila con 9 celdas no vacías
+    // Buscar la fila con 9 celdas no vacías que NO sean letras simples (A,B,C...)
     for (const row of allRows) {
       const celdas = row.map((c) => String(c ?? "").trim()).filter((c) => c !== "");
       if (celdas.length === 9) {
+        // Ignorar si todas son letras simples de columna (A, B, C...)
+        const sonLetras = celdas.every((c) => /^[A-I]$/.test(c));
+        if (sonLetras) continue;
+        // Ignorar si son instrucciones (primera celda muy larga)
+        if (celdas[0].length > 30) continue;
         plantillaA3 = celdas.map((campo, i) => ({
           letra: XLSX.utils.encode_col(i),
           campo,
@@ -490,36 +495,45 @@ export function generarPlantillaEjemplo(): Blob {
 
 // ─── EXPORTAR asientos ────────────────────────────────────────────────────────
 export function exportarAsientos(lineas: LineaAsiento[], plantillaA3: ColumnaPlantillaA3[]): Blob {
-  const campos = plantillaA3.length === 9
-    ? plantillaA3.map((c) => c.campo)
-    : PLANTILLA_A3_BASE.map((c) => c.campo);
-  const normaliza = (campo: string) => campo.trim().toLowerCase();
+  // Usar plantilla del cliente si tiene 9 columnas, si no usar la base
+  const campos = (plantillaA3?.length === 9 ? plantillaA3 : PLANTILLA_A3_BASE).map((c) => c.campo);
+
+  // Mapeo por posición fija — las 9 columnas siempre van en este orden:
+  // 0=numAsiento 1=fecha 2=codigo 3=concepto 4=documento 5=cuentaDebe 6=importeDebe 7=importeHaber 8=cuentaHaber
+  const getValor = (l: LineaAsiento, pos: number): string | number => {
+    switch (pos) {
+      case 0: return l.numAsiento;
+      case 1: return l.fecha;
+      case 2: return l.codigoOperacion;
+      case 3: return l.concepto;
+      case 4: return l.documento;
+      case 5: return l.cuentaDebe;
+      case 6: return l.importeDebe || "";
+      case 7: return l.importeHaber || "";
+      case 8: return l.cuentaHaber;
+      default: return "";
+    }
+  };
+
+  const tieneAlertas = lineas.some((l) => l.alerta);
+  const camposFinal = tieneAlertas ? [...campos, "Aviso"] : campos;
 
   const filas = lineas.map((l) => {
     const fila: Record<string, string | number> = {};
-    for (const campo of campos) {
-      const c = normaliza(campo);
-      if (c.includes("asiento") || c.includes("num")) fila[campo] = l.numAsiento;
-      else if (c.includes("fecha")) fila[campo] = l.fecha;
-      else if (c.includes("codigo") || c.includes("código")) fila[campo] = l.codigoOperacion;
-      else if (c.includes("concepto") || c.includes("descripcion") || c.includes("descripción")) fila[campo] = l.concepto;
-      else if (c.includes("documento")) fila[campo] = l.documento;
-      else if (c.includes("debe") && c.includes("cuenta")) fila[campo] = l.cuentaDebe;
-      else if (c.includes("debe")) fila[campo] = l.importeDebe || "";
-      else if (c.includes("haber") && c.includes("cuenta")) fila[campo] = l.cuentaHaber;
-      else if (c.includes("haber")) fila[campo] = l.importeHaber || "";
-      else fila[campo] = "";
-    }
-    if (l.alerta) fila["Aviso"] = l.alerta;
+    campos.forEach((campo, pos) => {
+      fila[campo] = getValor(l, pos);
+    });
+    if (tieneAlertas) fila["Aviso"] = l.alerta || "";
     return fila;
   });
 
-  const camposConAviso = lineas.some((l) => l.alerta) ? [...campos, "Aviso"] : campos;
-  const ws = XLSX.utils.json_to_sheet(filas, { header: camposConAviso });
-  ws["!cols"] = camposConAviso.map((c) => ({ wch: normaliza(c).includes("concepto") ? 32 : 16 }));
+  const ws = XLSX.utils.json_to_sheet(filas, { header: camposFinal });
+  ws["!cols"] = camposFinal.map((c, i) => ({
+    wch: i === 3 ? 36 : i === 8 || i === 5 ? 14 : 16
+  }));
 
   // Cabecera verde
-  camposConAviso.forEach((_, i) => {
+  camposFinal.forEach((_, i) => {
     const addr = XLSX.utils.encode_cell({ r: 0, c: i });
     if (ws[addr]) ws[addr].s = S.headerVerde;
   });
