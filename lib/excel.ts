@@ -47,48 +47,59 @@ export function leerFicheroCliente(buffer: ArrayBuffer): {
     const rows: (string | number | undefined)[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
     const map: Record<string, string> = {};
     for (const row of rows) {
-      const clave = String(row[0] ?? "").trim().toLowerCase().replace(/[*:]/g, "").trim();
+      const clave = String(row[0] ?? "")
+        .trim()
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")  // quita acentos
+        .replace(/[*:¿?()]/g, "")          // quita caracteres especiales
+        .trim();
       const valor = String(row[1] ?? "").trim();
       if (clave && valor) map[clave] = valor;
     }
 
     const get = (...keys: string[]) => {
       for (const k of keys) {
-        const v = map[k.toLowerCase()];
+        const kNorm = k.toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[*:¿?()]/g, "")
+          .trim();
+        const v = map[kNorm];
         if (v !== undefined && v !== "") return v;
       }
       return "";
     };
 
-    cliente.nombre = get("nombre", "razon social", "razón social", "cliente");
-    cliente.cif = get("cif", "nif");
-    cliente.actividad = get("actividad", "negocio", "actividad economica", "actividad económica");
+    cliente.nombre = get("nombre", "nombre / razón social", "nombre / razon social", "razon social", "razón social", "cliente");
+    cliente.cif = get("cif", "cif / nif", "nif");
+    cliente.actividad = get("actividad", "actividad económica", "actividad economica", "negocio");
 
-    const ret = get("retencion", "retención", "tipo retencion", "tipo retención").replace("%", "").trim();
+    const ret = get("tipo de retención habitual", "tipo de retencion habitual", "retención", "retencion", "tipo retencion", "tipo retención").replace("%", "").trim();
     cliente.retencion = ["7", "15", "19", "35"].includes(ret) ? ret as ClienteMaestro["retencion"] : "ninguna";
 
-    const prorrataVal = get("prorrata").toLowerCase();
+    const prorrataVal = get("¿aplica prorrata?", "aplica prorrata", "prorrata", "tiene prorrata").toLowerCase();
     cliente.prorrata = ["si", "sí", "true", "1", "yes"].includes(prorrataVal);
 
     if (cliente.prorrata) {
-      const pct = get("porcentaje prorrata", "% prorrata", "prorrata %", "porcentaje de prorrata");
+      const pct = get("porcentaje iva deducible (prorrata)", "porcentaje iva deducible", "porcentaje prorrata", "% prorrata", "prorrata %", "porcentaje de prorrata");
       const pctNum = Number(pct.replace("%", "").trim());
       if (!pct || isNaN(pctNum) || pctNum <= 0 || pctNum >= 100) {
-        avisos.push("⚠ Prorrata marcada como Sí pero el porcentaje no está definido o es inválido. Revisa el campo 'Porcentaje prorrata' en la hoja Cliente.");
-        cliente.porcentajeProrrata = 100; // sin efecto hasta que se corrija
-        cliente.prorrata = false; // desactivar para no aplicar sin porcentaje
+        avisos.push("⚠ Prorrata marcada como Sí pero el porcentaje no está definido o es inválido. Revisa el campo 'Porcentaje IVA deducible (prorrata)' en la hoja Cliente.");
+        cliente.porcentajeProrrata = 100;
+        cliente.prorrata = false;
       } else {
         cliente.porcentajeProrrata = pctNum;
       }
     }
 
-    const recargoVal = get("recargo equivalencia", "recargo de equivalencia").toLowerCase();
+    const recargoVal = get("¿recargo de equivalencia?", "recargo de equivalencia", "recargo equivalencia", "recargo").toLowerCase();
     cliente.recargoEquivalencia = ["si", "sí", "true", "1", "yes"].includes(recargoVal);
 
-    const cajaVal = get("criterio de caja", "criterio caja").toLowerCase();
+    const cajaVal = get("¿criterio de caja?", "criterio de caja", "criterio caja").toLowerCase();
     cliente.criterioCaja = ["si", "sí", "true", "1", "yes"].includes(cajaVal);
 
-    const regimen = get("regimen iva", "régimen iva", "régimen de iva").toLowerCase();
+    const regimen = get("régimen de iva", "regimen de iva", "régimen iva", "regimen iva").toLowerCase();
     if (["general", "simplificado", "exento", "recc"].includes(regimen)) {
       cliente.regimenIva = regimen as ClienteMaestro["regimenIva"];
     }
@@ -240,7 +251,7 @@ export function generarPlantillaEjemplo(): Blob {
   }
 
   // Nota final
-  set(wsCli, r + 1, 0, "IMPORTANTE: No cambies los textos de la columna A (nombres de campo). Solo modifica la columna B (valores).", alertaCell);
+  set(wsCli, r + 1, 0, "Rellena solo la columna B (valores). La columna A son los nombres de campo que la app necesita para leer el fichero — no los modifiques.", alertaCell);
 
   wsCli["!ref"] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: r + 2, c: 2 } });
   wsCli["!cols"] = [{ wch: 38 }, { wch: 32 }, { wch: 75 }];
@@ -258,7 +269,7 @@ export function generarPlantillaEjemplo(): Blob {
   set(wsPlan, 0, 2, "DESCRIPCIÓN / NOTAS", verde);
 
   // Instrucción
-  set(wsPlan, 1, 0, "Rellena la columna SUBCUENTA EN A3 con el código exacto que tiene ese concepto en tu A3. Puedes añadir filas al final para más clientes o proveedores.", alertaCell);
+  set(wsPlan, 1, 0, "Rellena la columna SUBCUENTA EN A3 con el código exacto de tu A3 para cada concepto. Añade todas las filas que necesites para clientes, proveedores y cuentas específicas de este cliente.", alertaCell);
   set(wsPlan, 1, 1, "", alertaCell);
   set(wsPlan, 1, 2, "", alertaCell);
 
@@ -320,7 +331,7 @@ export function generarPlantillaEjemplo(): Blob {
     rp++;
   }
 
-  set(wsPlan, rp + 1, 0, "IMPORTANTE: No elimines filas existentes. Rellena solo la columna SUBCUENTA EN A3. Añade filas al final para más clientes o proveedores.", alertaCell);
+  set(wsPlan, rp + 1, 0, "Añade todas las filas que necesites para clientes, proveedores y cuentas específicas de este cliente. Modifica libremente las subcuentas de la columna B.", alertaCell);
 
   wsPlan["!ref"] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rp + 2, c: 2 } });
   wsPlan["!cols"] = [{ wch: 45 }, { wch: 18 }, { wch: 55 }];
