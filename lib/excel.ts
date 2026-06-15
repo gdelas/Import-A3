@@ -256,20 +256,72 @@ function encontrarHoja(wb: XLSX.WorkBook, nombres: string[]): string | undefined
 }
 
 export function buscarCuenta(planCuentas: CuentaPlan[], ...conceptos: string[]): string {
-  const normaliza = (s: string) =>
-    s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim();
+  const norm = (s: string) =>
+    s.toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[.,;:()\-–—]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+
+  // Quita prefijos habituales del plan de cuentas:
+  // "Proveedor — X", "Cliente — X", "Banco — X"
+  const quitarPrefijo = (s: string) =>
+    norm(s)
+      .replace(/^(proveedor|cliente|banco|acreedor|deudor)\s*[—\-–]\s*/i, "")
+      .trim();
+
+  // Palabras relevantes de un texto (≥4 caracteres para evitar "de", "la", "sl"...)
+  const palabras = (s: string) =>
+    quitarPrefijo(s)
+      .split(" ")
+      .filter((w) => w.length >= 4);
+
   for (const concepto of conceptos) {
-    const obj = normaliza(concepto);
-    const exacto = planCuentas.find((c) => normaliza(c.concepto) === obj);
+    if (!concepto) continue;
+    const obj = norm(concepto);
+    const objSinPrefijo = quitarPrefijo(concepto);
+
+    // 1. Coincidencia exacta
+    const exacto = planCuentas.find((c) => norm(c.concepto) === obj || quitarPrefijo(c.concepto) === obj);
     if (exacto?.cuenta) return exacto.cuenta;
+
+    // 2. El concepto del plan está contenido en el nombre de la factura (sin prefijo)
+    const contenido = planCuentas.find((c) => {
+      const cSinPref = quitarPrefijo(c.concepto);
+      return cSinPref.length > 3 && obj.includes(cSinPref);
+    });
+    if (contenido?.cuenta) return contenido.cuenta;
+
+    // 3. El nombre de la factura (sin prefijo) está contenido en el concepto del plan
+    const inverso = planCuentas.find((c) => {
+      const cSinPref = quitarPrefijo(c.concepto);
+      return objSinPrefijo.length > 3 && cSinPref.includes(objSinPrefijo);
+    });
+    if (inverso?.cuenta) return inverso.cuenta;
+
+    // 4. Al menos 2 palabras clave coinciden entre el nombre de la factura y el del plan
+    const palaObj = palabras(concepto);
+    if (palaObj.length >= 2) {
+      const porPalabras = planCuentas.find((c) => {
+        const palaPlan = palabras(c.concepto);
+        const coinciden = palaObj.filter((p) => palaPlan.some((pp) => pp.includes(p) || p.includes(pp)));
+        return coinciden.length >= 2;
+      });
+      if (porPalabras?.cuenta) return porPalabras.cuenta;
+    }
+
+    // 5. Al menos 1 palabra clave larga (≥6 chars) coincide
+    const palaLargas = palaObj.filter((p) => p.length >= 6);
+    if (palaLargas.length > 0) {
+      const porPalabraLarga = planCuentas.find((c) => {
+        const palaPlan = palabras(c.concepto);
+        return palaLargas.some((p) => palaPlan.some((pp) => pp.includes(p) || p.includes(pp)));
+      });
+      if (porPalabraLarga?.cuenta) return porPalabraLarga.cuenta;
+    }
   }
-  for (const concepto of conceptos) {
-    const obj = normaliza(concepto);
-    const parcial = planCuentas.find(
-      (c) => normaliza(c.concepto).includes(obj) || obj.includes(normaliza(c.concepto))
-    );
-    if (parcial?.cuenta) return parcial.cuenta;
-  }
+
   return "";
 }
 
