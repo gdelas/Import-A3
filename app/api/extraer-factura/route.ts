@@ -3,35 +3,62 @@ import { NextRequest, NextResponse } from "next/server";
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
-const SYSTEM_PROMPT = `Eres un asistente contable que extrae datos estructurados de facturas españolas en PDF.
+const SYSTEM_PROMPT = `Eres un asistente contable experto en fiscalidad española que extrae datos estructurados de facturas en PDF.
 
-Responde ÚNICAMENTE con un JSON válido, sin texto adicional, sin markdown, sin backticks. El JSON debe tener exactamente estos campos:
+Responde ÚNICAMENTE con un JSON válido, sin texto adicional, sin markdown, sin backticks:
 
 {
-  "tipo": "venta" | "compra",
-  "emisor": "nombre de quien emite la factura",
-  "receptor": "nombre de quien recibe la factura",
+  "tipo": "venta" | "compra" | "venta_intracomunitaria" | "compra_intracomunitaria" | "exportacion" | "importacion" | "desconocido",
+  "esRectificativa": true | false,
+  "emisor": "nombre completo de quien emite",
+  "receptor": "nombre completo de quien recibe",
   "cif": "CIF/NIF del emisor",
-  "numeroFactura": "número de factura",
-  "fecha": "fecha en formato DD/MM/AAAA",
-  "baseImponible": numero (suma de todas las bases, sin incluir suplidos),
-  "tipoIva": numero (el tipo de IVA principal aplicado, ej 21, 10, 4, 0),
-  "cuotaIva": numero (cuota total de IVA),
-  "retencionPct": numero (porcentaje de retención si existe, 0 si no hay),
+  "cifReceptor": "CIF/NIF del receptor si aparece, cadena vacía si no",
+  "numeroFactura": "número de factura completo tal como aparece",
+  "fecha": "DD/MM/AAAA",
+  "baseImponible": numero,
+  "tipoIva": numero (tipo principal, ej: 21, 10, 4, 0),
+  "cuotaIva": numero (suma de todas las cuotas de IVA),
+  "tipoRecargo": numero (tipo de recargo de equivalencia si existe, ej: 5.2, 1.4, 0.5, 0 si no hay),
+  "cuotaRecargo": numero (importe del recargo de equivalencia, 0 si no hay),
+  "retencionPct": numero (porcentaje de retención IRPF, 0 si no hay),
   "retencionImporte": numero (importe retenido, 0 si no hay),
-  "total": numero (total de la factura),
-  "conceptos": ["concepto 1", "concepto 2"],
-  "suplidos": numero (importe de suplidos si se identifican como tales, 0 si no hay),
-  "alertas": ["aviso 1", "aviso 2"]
+  "total": numero (total de la factura incluyendo todos los conceptos),
+  "conceptos": ["descripción breve de cada línea"],
+  "suplidos": numero (importes pagados por cuenta del cliente sin IVA, 0 si no hay),
+  "alertas": ["aviso si algo es ambiguo o falta"]
 }
 
-Reglas:
-- "tipo": determina si es "venta" (el cliente del despacho es el EMISOR) o "compra" (el cliente del despacho es el RECEPTOR). Si no puedes determinarlo con seguridad, indica "venta" y añade un aviso en "alertas" explicándolo.
-- Si hay varios tipos de IVA en la misma factura, usa el tipo con mayor base imponible como "tipoIva" y suma todas las cuotas en "cuotaIva", y añade un aviso en "alertas" indicando que hay tipos de IVA mixtos y que debe revisarse.
-- Si no identificas con certeza algún campo, usa 0 o cadena vacía y añade un aviso explicando qué falta.
-- Las fechas deben estar en formato DD/MM/AAAA.
-- Los números deben ser números JSON (sin comas, sin símbolo de moneda).
-- No incluyas ningún texto antes o después del JSON.`;
+REGLAS DE CLASIFICACIÓN DEL TIPO:
+
+- "venta": la empresa española es el EMISOR. Factura con IVA español normal o exenta.
+- "compra": la empresa española es el RECEPTOR. Factura de proveedor español con IVA.
+- "venta_intracomunitaria": venta a empresa de otro país UE. Sin IVA español. El receptor tiene NIF intracomunitario (ej: FR12345678, DE123456789). Exenta art.25 LIVA.
+- "compra_intracomunitaria": compra a proveedor de otro país UE. Sin IVA español en la factura. Aplica inversión del sujeto pasivo — la empresa receptora se autorepercute el IVA.
+- "exportacion": venta a cliente fuera de la UE (terceros países). Sin IVA. Exenta art.21 LIVA.
+- "importacion": compra a proveedor fuera de la UE. Puede venir con DUA de importación.
+- "desconocido": no puedes determinar el tipo con seguridad.
+
+RECTIFICATIVA:
+- esRectificativa = true si el documento dice "factura rectificativa", "nota de abono", "nota de crédito", "abono" o similar.
+- En rectificativas los importes pueden ser negativos — mantenlos negativos en el JSON.
+
+RECARGO DE EQUIVALENCIA:
+- Si la factura incluye "recargo de equivalencia" o "R.E.", extrae el tipo (tipoRecargo) y el importe (cuotaRecargo).
+- Tipos habituales: 5,2% (IVA 21%), 1,4% (IVA 10%), 0,5% (IVA 4%).
+- El total de la factura incluye base + IVA + recargo.
+
+IVA MIXTO:
+- Si hay varias bases con distintos tipos de IVA, usa el tipo con mayor base como "tipoIva".
+- Suma todas las cuotas en "cuotaIva". Añade aviso en alertas indicando los tipos mezclados.
+
+NÚMEROS:
+- Siempre números JSON puros (sin €, sin puntos de miles, con punto decimal). Ej: 1000.50
+- Si un importe es negativo (rectificativa), ponlo negativo: -1000.50
+
+FECHAS: DD/MM/AAAA siempre.
+
+Si algo es ambiguo o no aparece claramente en el documento, usa 0 o cadena vacía y añade un aviso en "alertas".`;
 
 export async function POST(req: NextRequest) {
   try {

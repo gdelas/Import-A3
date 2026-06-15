@@ -71,15 +71,20 @@ export default function FacturasPage() {
 
         const factura: FacturaExtraida = {
           archivo: file.name,
-          tipo: data.tipo === "compra" ? "compra" : data.tipo === "venta" ? "venta" : "desconocido",
+          tipo: (["venta","compra","venta_intracomunitaria","compra_intracomunitaria","exportacion","importacion"].includes(data.tipo)
+            ? data.tipo : "desconocido") as FacturaExtraida["tipo"],
+          esRectificativa: Boolean(data.esRectificativa),
           emisor: data.emisor || "",
           receptor: data.receptor || "",
           cif: data.cif || "",
+          cifReceptor: data.cifReceptor || "",
           numeroFactura: data.numeroFactura || "",
           fecha: data.fecha || "",
           baseImponible: Number(data.baseImponible) || 0,
           tipoIva: Number(data.tipoIva) || 0,
           cuotaIva: Number(data.cuotaIva) || 0,
+          tipoRecargo: Number(data.tipoRecargo) || 0,
+          cuotaRecargo: Number(data.cuotaRecargo) || 0,
           retencionPct: Number(data.retencionPct) || 0,
           retencionImporte: Number(data.retencionImporte) || 0,
           total: Number(data.total) || 0,
@@ -220,12 +225,27 @@ function FacturaCard({ item, onEliminar }: { item: ProcesoFactura; onEliminar: (
       {item.estado === "ok" && item.factura && (
         <div className="p-4">
           <div className="grid sm:grid-cols-3 gap-x-6 gap-y-1 text-sm">
-            <Campo label="Tipo" value={item.factura.tipo === "venta" ? "Venta" : item.factura.tipo === "compra" ? "Compra" : "Sin determinar"} />
+            <Campo label="Tipo" value={
+              (() => {
+                const t = item.factura.tipo;
+                const r = item.factura.esRectificativa ? " (rectificativa)" : "";
+                if (t === "venta") return `Venta${r}`;
+                if (t === "compra") return `Compra${r}`;
+                if (t === "venta_intracomunitaria") return `Venta intracomunitaria${r}`;
+                if (t === "compra_intracomunitaria") return `Compra intracomunitaria${r}`;
+                if (t === "exportacion") return `Exportación${r}`;
+                if (t === "importacion") return `Importación${r}`;
+                return "Sin determinar";
+              })()
+            } />
             <Campo label="Fecha" value={item.factura.fecha || "—"} />
             <Campo label="Nº factura" value={item.factura.numeroFactura || "—"} />
             <Campo label="Emisor" value={item.factura.emisor || "—"} />
             <Campo label="Base" value={fmt(item.factura.baseImponible)} />
             <Campo label={`IVA ${item.factura.tipoIva}%`} value={fmt(item.factura.cuotaIva)} />
+            {item.factura.cuotaRecargo > 0 && (
+              <Campo label={`Recargo equiv. (${item.factura.tipoRecargo}%)`} value={fmt(item.factura.cuotaRecargo)} />
+            )}
             {item.factura.retencionImporte > 0 && (
               <Campo label={`Retención ${item.factura.retencionPct}%`} value={fmt(item.factura.retencionImporte)} />
             )}

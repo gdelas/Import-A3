@@ -49,17 +49,30 @@ export interface LineaAsiento {
   alerta?: string;
 }
 
+export type TipoOperacion =
+  | "venta"
+  | "compra"
+  | "venta_intracomunitaria"
+  | "compra_intracomunitaria"
+  | "exportacion"
+  | "importacion"
+  | "desconocido";
+
 export interface FacturaExtraida {
   archivo: string;
-  tipo: "venta" | "compra" | "desconocido";
+  tipo: TipoOperacion;
+  esRectificativa: boolean;
   emisor: string;
   receptor: string;
   cif: string;
+  cifReceptor: string;
   numeroFactura: string;
   fecha: string;
   baseImponible: number;
   tipoIva: number;
   cuotaIva: number;
+  tipoRecargo: number;
+  cuotaRecargo: number;
   retencionPct: number;
   retencionImporte: number;
   total: number;
@@ -86,6 +99,9 @@ export const PLAN_CUENTAS_BASE: CuentaPlan[] = [
   { concepto: "Proveedor principal", cuenta: "", notas: "Subcuenta 400xxx asignada en A3" },
   { concepto: "Banco principal", cuenta: "572", notas: "Cuenta bancaria principal" },
   { concepto: "Caja", cuenta: "570", notas: "" },
+  { concepto: "Compras de mercancías", cuenta: "600", notas: "Para empresas comerciales. En recargo de equivalencia va la base imponible." },
+  { concepto: "IVA y recargo no deducible", cuenta: "601", notas: "Solo si recargo de equivalencia = Sí. IVA + recargo van aquí." },
+  { concepto: "Devoluciones compras mercancías", cuenta: "608", notas: "Rectificativas de compras en recargo de equivalencia." },
   { concepto: "Ingreso por servicios", cuenta: "705", notas: "Cuenta habitual de ventas/servicios" },
   { concepto: "Ingreso por ventas de mercaderías", cuenta: "700", notas: "" },
   { concepto: "Gasto general / otros servicios", cuenta: "629", notas: "Cuenta habitual de gastos" },
