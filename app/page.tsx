@@ -5,7 +5,7 @@ import Link from "next/link";
 import {
   FileText, Users, Landmark, MessageCircleQuestion,
   Hash, BookOpen, ArrowUpRight, CheckCircle2,
-  AlertTriangle, Download, Loader2, RefreshCw,
+  AlertTriangle, Download, Loader2, RefreshCw, ClipboardCheck,
 } from "lucide-react";
 import { leerSesion, limpiarSesion } from "@/lib/sessionStore";
 import { generarYExportar } from "@/lib/generador";
@@ -110,6 +110,8 @@ export default function Home() {
       description: "Tabla editable de códigos A3 por tipo de movimiento.", badge: 0 },
     { index: "06", href: "/referencia", icon: BookOpen, title: "PGC y calendario fiscal",
       description: "Cuentas del PGC, modelos y calendario de referencia.", badge: 0 },
+    { index: "07", href: "/revision", icon: ClipboardCheck, title: "Revisión y exportación",
+      description: "Genera los asientos, revísalos, edítalos y descarga el XLS para A3.", badge: 0 },
   ];
 
   return (
@@ -232,11 +234,11 @@ export default function Home() {
               </div>
 
               <button
-                onClick={generarAsientos}
+                onClick={() => { window.location.href = "/revision"; }}
                 disabled={!puedeGenerar || generando}
                 className="flex items-center gap-2 bg-[var(--color-brand)] text-white px-5 py-2.5 rounded-md font-medium text-sm hover:bg-[var(--color-brand-dark)] transition-colors disabled:opacity-40"
               >
-                {generando ? <><Loader2 size={15} className="animate-spin" />Generando...</> : <><Download size={15} />Generar asientos XLS</>}
+                <><ClipboardCheck size={15} />Revisar y exportar asientos</>
               </button>
             </div>
 

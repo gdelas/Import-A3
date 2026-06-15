@@ -35,119 +35,207 @@ export function leerFicheroCliente(buffer: ArrayBuffer): {
   const avisos: string[] = [];
   const wb = XLSX.read(buffer, { type: "array" });
 
-  const hojaCliente = encontrarHoja(wb, ["cliente", "datos"]);
-  const hojaPlan = encontrarHoja(wb, ["plancuentas", "plan de cuentas", "cuentas", "plan"]);
+  const hojaCliente   = encontrarHoja(wb, ["cliente", "datos"]);
+  const hojaPlan      = encontrarHoja(wb, ["plancuentas", "plan de cuentas", "cuentas", "plan"]);
   const hojaPlantilla = encontrarHoja(wb, ["plantillaa3", "plantilla a3", "a3", "plantilla"]);
 
   const cliente: ClienteMaestro = { ...PLACEHOLDER_CLIENTE };
 
+  // ── Normalizar texto para comparar sin acentos ni signos raros ──
+  const norm = (s: string) =>
+    String(s ?? "")
+      .trim()
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[*:¿?()\/\\]/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
+
   // ── Hoja Cliente ──
+  // Lee TODAS las filas como array. Para cada fila toma col A como clave y col B como valor.
+  // Ignora filas donde col A no corresponde a ningún campo conocido (cabeceras, secciones, etc.)
   if (hojaCliente) {
     const sheet = wb.Sheets[hojaCliente];
-    const rows: (string | number | undefined)[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
+    const rows: (string | number | undefined)[][] = XLSX.utils.sheet_to_json(
+      sheet, { header: 1, defval: "" }
+    );
+
     const map: Record<string, string> = {};
     for (const row of rows) {
-      const clave = String(row[0] ?? "")
-        .trim()
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")  // quita acentos
-        .replace(/[*:¿?()]/g, "")          // quita caracteres especiales
-        .trim();
+      const clave = norm(String(row[0] ?? ""));
       const valor = String(row[1] ?? "").trim();
-      if (clave && valor) map[clave] = valor;
+      // Solo guardamos si hay valor en la columna B (ignora cabeceras y secciones vacías)
+      if (clave && valor && valor !== "VALOR A RELLENAR" && valor !== "INSTRUCCIONES") {
+        map[clave] = valor;
+      }
     }
 
+    // Buscar un campo probando todas sus variantes normalizadas
     const get = (...keys: string[]) => {
       for (const k of keys) {
-        const kNorm = k.toLowerCase()
-          .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, "")
-          .replace(/[*:¿?()]/g, "")
-          .trim();
-        const v = map[kNorm];
-        if (v !== undefined && v !== "") return v;
+        const v = map[norm(k)];
+        if (v) return v;
       }
       return "";
     };
 
-    cliente.nombre = get("nombre", "nombre / razón social", "nombre / razon social", "razon social", "razón social", "cliente");
-    cliente.cif = get("cif", "cif / nif", "nif");
-    cliente.actividad = get("actividad", "actividad económica", "actividad economica", "negocio");
+    cliente.nombre   = get("Nombre", "Nombre / Razón social", "Nombre Razon social", "Razon social", "Cliente");
+    cliente.cif      = get("CIF", "CIF / NIF", "CIF NIF", "NIF");
+    cliente.actividad = get("Actividad", "Actividad económica", "Actividad economica", "Negocio");
 
-    const ret = get("tipo de retención habitual", "tipo de retencion habitual", "retención", "retencion", "tipo retencion", "tipo retención").replace("%", "").trim();
-    cliente.retencion = ["7", "15", "19", "35"].includes(ret) ? ret as ClienteMaestro["retencion"] : "ninguna";
+    const regimen = get("Régimen de IVA", "Regimen de IVA", "Régimen IVA", "Regimen IVA").toLowerCase();
+    if (["general", "simplificado", "exento", "recc"].includes(regimen)) {
+      cliente.regimenIva = regimen as ClienteMaestro["regimenIva"];
+    }
 
-    const prorrataVal = get("¿aplica prorrata?", "aplica prorrata", "prorrata", "tiene prorrata").toLowerCase();
-    cliente.prorrata = ["si", "sí", "true", "1", "yes"].includes(prorrataVal);
+    const prorrataVal = get(
+      "¿Aplica prorrata?", "Aplica prorrata", "Prorrata", "Tiene prorrata"
+    ).toLowerCase();
+    cliente.prorrata = ["si", "sí", "s", "true", "1", "yes"].includes(prorrataVal);
 
     if (cliente.prorrata) {
-      const pct = get("porcentaje iva deducible (prorrata)", "porcentaje iva deducible", "porcentaje prorrata", "% prorrata", "prorrata %", "porcentaje de prorrata");
-      const pctNum = Number(pct.replace("%", "").trim());
+      const pct = get(
+        "Porcentaje IVA deducible (prorrata)",
+        "Porcentaje IVA deducible",
+        "Porcentaje prorrata",
+        "% prorrata",
+        "Prorrata %",
+        "Porcentaje de prorrata"
+      );
+      const pctNum = Number(String(pct).replace("%", "").trim());
       if (!pct || isNaN(pctNum) || pctNum <= 0 || pctNum >= 100) {
-        avisos.push("⚠ Prorrata marcada como Sí pero el porcentaje no está definido o es inválido. Revisa el campo 'Porcentaje IVA deducible (prorrata)' en la hoja Cliente.");
-        cliente.porcentajeProrrata = 100;
+        avisos.push(
+          "⚠ Prorrata marcada como Sí pero el porcentaje no está definido o no es válido. " +
+          "Rellena el campo 'Porcentaje IVA deducible (prorrata)' con un número entre 1 y 99."
+        );
         cliente.prorrata = false;
+        cliente.porcentajeProrrata = 100;
       } else {
         cliente.porcentajeProrrata = pctNum;
       }
     }
 
-    const recargoVal = get("¿recargo de equivalencia?", "recargo de equivalencia", "recargo equivalencia", "recargo").toLowerCase();
-    cliente.recargoEquivalencia = ["si", "sí", "true", "1", "yes"].includes(recargoVal);
+    const recargoVal = get(
+      "¿Recargo de equivalencia?", "Recargo de equivalencia", "Recargo equivalencia", "Recargo"
+    ).toLowerCase();
+    cliente.recargoEquivalencia = ["si", "sí", "s", "true", "1", "yes"].includes(recargoVal);
 
-    const cajaVal = get("¿criterio de caja?", "criterio de caja", "criterio caja").toLowerCase();
-    cliente.criterioCaja = ["si", "sí", "true", "1", "yes"].includes(cajaVal);
+    const cajaVal = get(
+      "¿Criterio de caja?", "Criterio de caja", "Criterio caja"
+    ).toLowerCase();
+    cliente.criterioCaja = ["si", "sí", "s", "true", "1", "yes"].includes(cajaVal);
 
-    const regimen = get("régimen de iva", "regimen de iva", "régimen iva", "regimen iva").toLowerCase();
-    if (["general", "simplificado", "exento", "recc"].includes(regimen)) {
-      cliente.regimenIva = regimen as ClienteMaestro["regimenIva"];
+    const ret = get(
+      "Tipo de retención habitual",
+      "Tipo de retencion habitual",
+      "Retención",
+      "Retencion",
+      "Tipo retención",
+      "Tipo retencion"
+    ).replace("%", "").trim();
+    cliente.retencion = ["7", "15", "19", "35"].includes(ret)
+      ? (ret as ClienteMaestro["retencion"])
+      : "ninguna";
+
+    cliente.notas = get("Notas", "Observaciones");
+
+    if (!cliente.nombre) {
+      avisos.push(
+        "No se ha encontrado el campo 'Nombre' en la hoja Cliente. " +
+        "Comprueba que la columna A tiene exactamente el texto 'Nombre / Razón social' y que la columna B tiene el valor."
+      );
     }
-
-    cliente.notas = get("notas", "observaciones");
-
-    if (!cliente.nombre) avisos.push("No se ha encontrado el campo 'Nombre' en la hoja Cliente.");
-    if (!cliente.cif) avisos.push("No se ha encontrado el campo 'CIF/NIF' en la hoja Cliente.");
+    if (!cliente.cif) {
+      avisos.push("No se ha encontrado el campo 'CIF / NIF' en la hoja Cliente.");
+    }
   } else {
-    avisos.push("El fichero no contiene una hoja 'Cliente' con los datos fiscales.");
+    avisos.push("El fichero no contiene una hoja llamada 'Cliente'. Las hojas deben llamarse: Cliente, PlanCuentas y PlantillaA3.");
   }
 
   // ── Hoja Plan de cuentas ──
+  // Lee como array con header:1 para controlar exactamente qué es cada columna.
+  // La cabecera esperada es: Concepto | Subcuenta en A3 | Notas (o variantes)
+  // Ignora filas de sección (col A empieza con espacio o con ──) y filas de instrucción
   let planCuentas: CuentaPlan[] = [];
   if (hojaPlan) {
     const sheet = wb.Sheets[hojaPlan];
-    const rows: Record<string, string>[] = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-    planCuentas = rows
-      .map((r) => ({
-        concepto: String(r["Concepto"] ?? r["concepto"] ?? "").trim(),
-        cuenta: String(r["Cuenta"] ?? r["cuenta"] ?? r["Subcuenta"] ?? r["subcuenta"] ?? "").trim(),
-        notas: String(r["Notas"] ?? r["notas"] ?? "").trim() || undefined,
-      }))
-      .filter((r) => r.concepto !== "" && !r.concepto.startsWith("→"));
+    const allRows: (string | number | undefined)[][] = XLSX.utils.sheet_to_json(
+      sheet, { header: 1, defval: "" }
+    );
+
+    // Encontrar la fila de cabecera — la que tiene "concepto" en la primera columna
+    let headerIdx = -1;
+    let colConcepto = 0;
+    let colCuenta = 1;
+
+    for (let i = 0; i < Math.min(allRows.length, 5); i++) {
+      const row = allRows[i];
+      const normRow = row.map((c) => norm(String(c)));
+      const idxConcepto = normRow.findIndex((c) => c === "concepto");
+      if (idxConcepto >= 0) {
+        headerIdx = i;
+        colConcepto = idxConcepto;
+        // Buscar columna de cuenta/subcuenta
+        const idxCuenta = normRow.findIndex(
+          (c) => c.includes("subcuenta") || c.includes("cuenta") || c === "a3"
+        );
+        if (idxCuenta >= 0) colCuenta = idxCuenta;
+        break;
+      }
+    }
+
+    const dataRows = headerIdx >= 0 ? allRows.slice(headerIdx + 1) : allRows.slice(1);
+
+    for (const row of dataRows) {
+      const concepto = String(row[colConcepto] ?? "").trim();
+      const cuenta   = String(row[colCuenta] ?? "").trim();
+      const notas    = String(row[2] ?? "").trim();
+
+      // Ignorar filas vacías, filas de sección (contienen ──) y filas de instrucción
+      if (!concepto) continue;
+      if (concepto.includes("──") || concepto.startsWith("  ")) continue;
+      if (concepto.toLowerCase().includes("rellena la columna")) continue;
+      if (concepto.toLowerCase().includes("anadir") || concepto.toLowerCase().includes("añadir")) continue;
+      // Ignorar filas donde el concepto es una instrucción (empieza con →)
+      if (concepto.startsWith("→") || concepto.startsWith("Rellena")) continue;
+
+      planCuentas.push({ concepto, cuenta: cuenta || "", notas: notas || undefined });
+    }
 
     const sinCuenta = planCuentas.filter((c) => !c.cuenta).length;
-    if (sinCuenta > 0) {
-      avisos.push(`${sinCuenta} concepto(s) del plan de cuentas sin subcuenta asignada — los asientos correspondientes usarán cuentas genéricas del PGC.`);
-    }
     if (planCuentas.length === 0) {
-      avisos.push("La hoja PlanCuentas no tiene filas válidas.");
+      avisos.push("La hoja PlanCuentas no tiene filas válidas. Comprueba que la cabecera tiene 'Concepto' y 'Subcuenta en A3'.");
+    } else if (sinCuenta > 0) {
+      avisos.push(`${sinCuenta} concepto(s) sin subcuenta asignada — usarán cuentas genéricas del PGC.`);
     }
   } else {
-    avisos.push("El fichero no contiene una hoja 'PlanCuentas'. Los asientos usarán cuentas genéricas del PGC.");
+    avisos.push("No se encontró la hoja 'PlanCuentas'. Los asientos usarán cuentas genéricas del PGC.");
   }
 
   // ── Hoja Plantilla A3 ──
+  // Busca la fila que contiene exactamente 9 columnas con texto — esa es la cabecera
   let plantillaA3: ColumnaPlantillaA3[] = [];
   if (hojaPlantilla) {
     const sheet = wb.Sheets[hojaPlantilla];
-    const rows: string[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
-    const cabecera = rows[0] || [];
-    plantillaA3 = cabecera
-      .map((campo, i) => ({ letra: XLSX.utils.encode_col(i), campo: String(campo).trim() }))
-      .filter((c) => c.campo !== "" && !c.campo.startsWith("→"));
+    const allRows: (string | number | undefined)[][] = XLSX.utils.sheet_to_json(
+      sheet, { header: 1, defval: "" }
+    );
 
-    if (plantillaA3.length !== 9) {
-      avisos.push(`La hoja PlantillaA3 tiene ${plantillaA3.length} columnas — se esperan 9. Se usará el formato estándar al exportar.`);
+    // Buscar la fila con 9 celdas no vacías
+    for (const row of allRows) {
+      const celdas = row.map((c) => String(c ?? "").trim()).filter((c) => c !== "");
+      if (celdas.length === 9) {
+        plantillaA3 = celdas.map((campo, i) => ({
+          letra: XLSX.utils.encode_col(i),
+          campo,
+        }));
+        break;
+      }
+    }
+
+    if (plantillaA3.length === 0) {
+      avisos.push("No se encontró una fila con exactamente 9 columnas en la hoja PlantillaA3. Se usará el formato estándar.");
       plantillaA3 = PLANTILLA_A3_BASE;
     }
   } else {
