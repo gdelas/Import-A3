@@ -264,61 +264,89 @@ export function buscarCuenta(planCuentas: CuentaPlan[], ...conceptos: string[]):
       .replace(/\s+/g, " ")
       .trim();
 
-  // Quita prefijos habituales del plan de cuentas:
-  // "Proveedor — X", "Cliente — X", "Banco — X"
+  // Quita prefijos habituales del plan de cuentas
   const quitarPrefijo = (s: string) =>
     norm(s)
-      .replace(/^(proveedor|cliente|banco|acreedor|deudor)\s*[—\-–]\s*/i, "")
+      .replace(/^(proveedor|cliente|banco|acreedor|deudor|hacienda publica,?\s*|hp,?\s*)/i, "")
       .trim();
 
-  // Palabras relevantes de un texto (≥4 caracteres para evitar "de", "la", "sl"...)
+  // Palabras relevantes (≥4 chars)
   const palabras = (s: string) =>
-    quitarPrefijo(s)
-      .split(" ")
-      .filter((w) => w.length >= 4);
+    quitarPrefijo(s).split(" ").filter((w) => w.length >= 4);
+
+  // Aliases para conceptos contables estándar — mapea términos del código
+  // a cómo los puede haber escrito el usuario en su plan de cuentas
+  const aliases: Record<string, string[]> = {
+    "iva soportado":    ["iva soportad", "hacienda publica iva soportad", "hp iva soportad", "472"],
+    "iva repercutido":  ["iva repercut", "hacienda publica iva repercut", "hp iva repercut", "477"],
+    "hp retenciones soportadas": ["hp acreed reten soportad", "retenciones soportad", "473"],
+    "hp retenciones practicadas": ["hp acreed reten practicad", "reten practicad", "4751", "47510"],
+    "ingreso por servicios": ["prestaciones de servicios", "prestacion de servicios", "ventas servicios", "705"],
+    "ingreso por ventas de mercancias": ["ventas mercancias", "ventas de mercancias", "700"],
+    "compras de mercancias": ["compras mercancias", "trabajos realizados por otras", "607", "600"],
+    "gasto general / otros servicios": ["otros servicios", "varios", "gastos generales", "629"],
+    "arrendamientos": ["arrendamiento", "alquiler", "621"],
+    "suministros": ["telefono", "luz", "agua", "suministro", "628"],
+    "servicios profesionales": ["notarios", "traductores", "abogados", "asesores", "623"],
+    "seguros": ["primas de seguros", "prima seguro", "625"],
+    "servicios bancarios": ["comisiones banco", "comision bancaria", "626"],
+    "publicidad": ["publicidad propaganda", "627"],
+    "gastos de personal": ["nominas", "sueldos", "salarios", "640"],
+    "suplidos": ["suplido", "554"],
+    "banco principal": ["banco", "banesto", "santander", "caixabank", "bbva", "sabadell", "572"],
+    "caja": ["caja", "570"],
+    "cliente principal": ["cliente", "43"],
+    "proveedor principal": ["proveedor", "40"],
+  };
 
   for (const concepto of conceptos) {
     if (!concepto) continue;
     const obj = norm(concepto);
-    const objSinPrefijo = quitarPrefijo(concepto);
+    const objSinPref = quitarPrefijo(concepto);
 
-    // 1. Coincidencia exacta
-    const exacto = planCuentas.find((c) => norm(c.concepto) === obj || quitarPrefijo(c.concepto) === obj);
-    if (exacto?.cuenta) return exacto.cuenta;
-
-    // 2. El concepto del plan está contenido en el nombre de la factura (sin prefijo)
-    const contenido = planCuentas.find((c) => {
-      const cSinPref = quitarPrefijo(c.concepto);
-      return cSinPref.length > 3 && obj.includes(cSinPref);
-    });
-    if (contenido?.cuenta) return contenido.cuenta;
-
-    // 3. El nombre de la factura (sin prefijo) está contenido en el concepto del plan
-    const inverso = planCuentas.find((c) => {
-      const cSinPref = quitarPrefijo(c.concepto);
-      return objSinPrefijo.length > 3 && cSinPref.includes(objSinPrefijo);
-    });
-    if (inverso?.cuenta) return inverso.cuenta;
-
-    // 4. Al menos 2 palabras clave coinciden entre el nombre de la factura y el del plan
-    const palaObj = palabras(concepto);
-    if (palaObj.length >= 2) {
-      const porPalabras = planCuentas.find((c) => {
-        const palaPlan = palabras(c.concepto);
-        const coinciden = palaObj.filter((p) => palaPlan.some((pp) => pp.includes(p) || p.includes(pp)));
-        return coinciden.length >= 2;
-      });
-      if (porPalabras?.cuenta) return porPalabras.cuenta;
+    // 1. Coincidencia exacta (con o sin prefijo)
+    for (const c of planCuentas) {
+      if (!c.cuenta) continue;
+      if (norm(c.concepto) === obj || quitarPrefijo(c.concepto) === obj) return c.cuenta;
     }
 
-    // 5. Al menos 1 palabra clave larga (≥6 chars) coincide
-    const palaLargas = palaObj.filter((p) => p.length >= 6);
-    if (palaLargas.length > 0) {
-      const porPalabraLarga = planCuentas.find((c) => {
+    // 2. El concepto del plan está contenido en el de la factura o viceversa
+    for (const c of planCuentas) {
+      if (!c.cuenta) continue;
+      const cNorm = quitarPrefijo(c.concepto);
+      if (cNorm.length > 3 && (obj.includes(cNorm) || objSinPref.includes(cNorm))) return c.cuenta;
+      if (objSinPref.length > 3 && cNorm.includes(objSinPref)) return c.cuenta;
+    }
+
+    // 3. Aliases — busca por términos alternativos del concepto buscado
+    const objAlias = aliases[obj] ?? aliases[objSinPref] ?? [];
+    for (const alias of objAlias) {
+      for (const c of planCuentas) {
+        if (!c.cuenta) continue;
+        const cNorm = norm(c.concepto);
+        if (cNorm.includes(alias) || alias.includes(cNorm)) return c.cuenta;
+        // Si el alias es un número de cuenta (ej: "472"), busca por inicio de cuenta
+        if (/^\d+$/.test(alias) && c.cuenta.startsWith(alias)) return c.cuenta;
+      }
+    }
+
+    // 4. Al menos 2 palabras clave coinciden
+    const palaObj = palabras(concepto);
+    if (palaObj.length >= 2) {
+      for (const c of planCuentas) {
+        if (!c.cuenta) continue;
         const palaPlan = palabras(c.concepto);
-        return palaLargas.some((p) => palaPlan.some((pp) => pp.includes(p) || p.includes(pp)));
-      });
-      if (porPalabraLarga?.cuenta) return porPalabraLarga.cuenta;
+        const coinciden = palaObj.filter((p) => palaPlan.some((pp) => pp.includes(p) || p.includes(pp)));
+        if (coinciden.length >= 2) return c.cuenta;
+      }
+    }
+
+    // 5. Al menos 1 palabra larga (≥6 chars) coincide
+    const palaLargas = palaObj.filter((p) => p.length >= 6);
+    for (const c of planCuentas) {
+      if (!c.cuenta) continue;
+      const palaPlan = palabras(c.concepto);
+      if (palaLargas.some((p) => palaPlan.some((pp) => pp.includes(p) || p.includes(pp)))) return c.cuenta;
     }
   }
 
